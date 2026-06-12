@@ -3,24 +3,46 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Minimal Anki</title>
+    <title>Serverless Anki</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="app">
+    <div class="container">
         <div id="setup-section" class="card">
-            <h2>Setup Setup</h2>
-            <input type="text" id="github-token" placeholder="GitHub Personal Access Token">
-            <input type="text" id="gist-id" placeholder="Gist ID">
-            <button onclick="loadGist()">Load Deck</button>
-            <p id="status-message"></p>
+            <h2>Serverless Flashcards</h2>
+            <p class="subtitle">Select a deck below to start studying. Progress is saved locally in your browser.</p>
+            
+            <hr>
+            
+            <div class="deck-selection">
+                <h3>Load Public Deck</h3>
+                <select id="public-decks-dropdown">
+                    <option value="cards/cs-basics.json">Computer Science Basics</option>
+                </select>
+                <button onclick="loadSelectedPublicDeck()" class="btn btn-primary">Load Deck</button>
+                
+                <h3 style="margin-top: 20px;">Or Upload Your Own</h3>
+                <input type="file" id="file-upload" accept=".json" onchange="loadUploadedFile(event)">
+            </div>
+
+            <div class="admin-toggle">
+                <button onclick="toggleAdminLogin()" class="btn btn-text">Admin Login (Cloud Sync)</button>
+            </div>
+
+            <div id="admin-login-section" class="hidden" style="margin-top: 15px;">
+                <input type="password" id="admin-token" placeholder="GitHub Personal Access Token">
+                <p style="font-size: 0.8rem; color: #666;">Logging in switches saving mode to the GitHub API.</p>
+                <button onclick="saveAdminToken()" class="btn btn-secondary">Login</button>
+            </div>
         </div>
 
         <div id="study-section" class="hidden">
             <div class="controls card">
+                <h3 id="deck-title-display">Deck Title</h3>
                 <label>Min Index: <input type="number" id="range-min" value="0"></label>
                 <label>Max Index: <input type="number" id="range-max" value="100"></label>
-                <button onclick="pickNextCard()">Apply Range & Start</button>
+                <button onclick="pickNextCard()" class="btn btn-primary">Apply & Start</button>
+                <span id="sync-status-badge" class="badge">Local Save Mode</span>
             </div>
 
             <div id="flashcard" class="card hidden">
@@ -28,21 +50,19 @@
                     <span id="card-id">#0</span>
                     <span id="card-value" class="badge">Value: 0 (New)</span>
                 </div>
-                
-                <div id="question-text">Question goes here...</div>
-                
-                <button id="show-answer-btn" onclick="showAnswer()">Show Answer</button>
+                <div id="question-text"></div>
+                <button id="show-answer-btn" onclick="showAnswer()" class="btn btn-primary">Show Answer</button>
 
                 <div id="answer-section" class="hidden">
                     <hr>
-                    <div id="answer-text">Answer goes here...</div>
+                    <div id="answer-text"></div>
                     <p class="eval-prompt">How did you do?</p>
                     <div class="eval-buttons">
-                        <button onclick="evaluateCard(1)">1 (Great)</button>
-                        <button onclick="evaluateCard(2)">2</button>
-                        <button onclick="evaluateCard(3)">3</button>
-                        <button onclick="evaluateCard(4)">4</button>
-                        <button onclick="evaluateCard(5)">5 (Very Bad)</button>
+                        <button class="btn btn-secondary" onclick="evaluateCard(1)">1 (Great)</button>
+                        <button class="btn btn-secondary" onclick="evaluateCard(2)">2</button>
+                        <button class="btn btn-secondary" onclick="evaluateCard(3)">3</button>
+                        <button class="btn btn-secondary" onclick="evaluateCard(4)">4</button>
+                        <button class="btn btn-secondary" onclick="evaluateCard(5)">5 (Very Bad)</button>
                     </div>
                 </div>
             </div>
