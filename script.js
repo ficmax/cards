@@ -263,35 +263,42 @@ async function saveProgress() {
             
             const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${AppState.deckId}`;
             
-            // Try to get the SHA of the file specifically on the DATA_BRANCH
+            // Try to get the SHA of the file SPECIFICALLY on the data branch
             let fileSha = undefined;
             try {
-                const getRes = await fetch(`${url}?ref=${DATA_BRANCH}`, { headers: { 'Authorization': `token ${AppState.token}` } });
+                // Must use ?ref=data to fetch the SHA from the correct branch
+                const getRes = await fetch(`${url}?ref=${DATA_BRANCH}`, { 
+                    headers: { 'Authorization': `token ${AppState.token}` } 
+                });
                 if (getRes.ok) {
                     const currentData = await getRes.json();
                     fileSha = currentData.sha;
                 }
             } catch (e) {
-                // File doesn't exist on data branch yet, SHA remains undefined (GitHub will create it)
+                console.log("File not found on data branch. Creating new file.");
             }
 
             const newPayload = { meta: AppState.meta, cards: AppState.deck };
             const jsonString = JSON.stringify(newPayload, null, 2);
+            
+            // Base64 Encoding using standard web APIs (handling Unicode characters correctly)
             const bytes = new TextEncoder().encode(jsonString);
-            const base64Content = btoa(String.fromCharCode(...bytes));
+            const base64Content = btoa(String.fromCharCode.apply(null, Array.from(bytes)));
 
+            // Construct the payload for GitHub
             const bodyPayload = {
-                message: `Cards Auto-Sync: Updated ${changesToSave} cards`,
+                message: `Anki Auto-Sync: Updated ${changesToSave} cards`,
                 content: base64Content,
-                branch: DATA_BRANCH // IMPORTANT: Tells GitHub to save it to the data branch
+                branch: DATA_BRANCH // Explicitly tell GitHub to push to the data branch
             };
             
-            // Only attach SHA if the file already exists on the data branch
+            // If the file already exists on the 'data' branch, we MUST include its SHA to overwrite it.
+            // If it doesn't exist, we MUST NOT include the 'sha' key at all.
             if (fileSha) {
                 bodyPayload.sha = fileSha;
             }
 
-            await fetch(url, {
+            const putRes = await fetch(url, {
                 method: 'PUT',
                 headers: {
                     'Authorization': `token ${AppState.token}`,
@@ -299,11 +306,16 @@ async function saveProgress() {
                 },
                 body: JSON.stringify(bodyPayload)
             });
+
+            if (!putRes.ok) {
+                const errorData = await putRes.json();
+                throw new Error(errorData.message || "PUT request failed");
+            }
             
             AppState.unsavedChanges = 0;
             updateSyncBadge("Cloud Sync Active", "#4caf50", "white");
         } catch (error) {
-            console.error("Cloud Sync Failed", error);
+            console.error("Cloud Sync Failed:", error);
             updateSyncBadge("Sync Failed!", "#f44336", "white");
         }
     }
