@@ -1,1 +1,53 @@
-Hi
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minimal Anki</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <div id="setup-section" class="card">
+            <h2>Setup Setup</h2>
+            <input type="text" id="github-token" placeholder="GitHub Personal Access Token">
+            <input type="text" id="gist-id" placeholder="Gist ID">
+            <button onclick="loadGist()">Load Deck</button>
+            <p id="status-message"></p>
+        </div>
+
+        <div id="study-section" class="hidden">
+            <div class="controls card">
+                <label>Min Index: <input type="number" id="range-min" value="0"></label>
+                <label>Max Index: <input type="number" id="range-max" value="100"></label>
+                <button onclick="pickNextCard()">Apply Range & Start</button>
+            </div>
+
+            <div id="flashcard" class="card hidden">
+                <div class="header">
+                    <span id="card-id">#0</span>
+                    <span id="card-value" class="badge">Value: 0 (New)</span>
+                </div>
+                
+                <div id="question-text">Question goes here...</div>
+                
+                <button id="show-answer-btn" onclick="showAnswer()">Show Answer</button>
+
+                <div id="answer-section" class="hidden">
+                    <hr>
+                    <div id="answer-text">Answer goes here...</div>
+                    <p class="eval-prompt">How did you do?</p>
+                    <div class="eval-buttons">
+                        <button onclick="evaluateCard(1)">1 (Great)</button>
+                        <button onclick="evaluateCard(2)">2</button>
+                        <button onclick="evaluateCard(3)">3</button>
+                        <button onclick="evaluateCard(4)">4</button>
+                        <button onclick="evaluateCard(5)">5 (Very Bad)</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
