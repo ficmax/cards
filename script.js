@@ -1,32 +1,41 @@
 // --- Application State & Config ---
-const GITHUB_OWNER = "ficmax"; // CHANGE THIS TO YOUR USERNAME
+const GITHUB_OWNER = "ficnerm"; // CHANGE THIS TO YOUR USERNAME
 const GITHUB_REPO = "cards";
 const CARDS_FOLDER = "cards";
+const DATA_BRANCH = "data"; // The branch where progress is saved
+
+const SAVE_THRESHOLD = 5;       // Save to GitHub after 5 evaluated cards
+const SAVE_INTERVAL_MS = 60000; // Background timer: Save every 60 seconds
 
 const AppState = {
-    syncMode: 'local', // 'local' (public visitor) or 'github' (admin logged in)
-    token: null,       // Your PAT token for admin cloud sync
-    deckId: null,      // e.g., 'cards/cs-basics.json'
-    meta: {},          // The "meta" header block from the JSON
-    deck: [],          // The "cards" array from the JSON
-    currentIndex: -1
+    syncMode: 'local', 
+    token: null,       
+    deckId: null,      
+    meta: {},          
+    deck: [],          
+    currentIndex: -1,
+    unsavedChanges: 0  // Tracks cards evaluated since last save
 };
 
 // --- Initialization ---
 document.addEventListener("DOMContentLoaded", async () => {
-    // 1. Check if admin token is already saved on this device
     const savedToken = localStorage.getItem('anki_github_token');
     if (savedToken) {
         AppState.token = savedToken;
         AppState.syncMode = 'github';
-        document.getElementById('sync-status-badge').innerText = "Cloud Sync Active";
-        document.getElementById('sync-status-badge').style.background = "#4caf50";
-        document.getElementById('sync-status-badge').style.color = "white";
+        updateSyncBadge("Cloud Sync Active", "#4caf50", "white");
     }
-
-    // 2. Automatically load the list of available decks from the repository
     await populateDecksDropdown();
 });
+
+function updateSyncBadge(text, bg, color) {
+    const badge = document.getElementById('sync-status-badge');
+    if(badge) {
+        badge.innerText = text;
+        badge.style.background = bg;
+        badge.style.color = color || "black";
+    }
+}
 
 // --- File Discovery (API Call) ---
 async function populateDecksDropdown() {
@@ -34,56 +43,60 @@ async function populateDecksDropdown() {
     dropdown.innerHTML = '<option value="">Loading decks...</option>';
 
     try {
-        // We can read public repo contents without a token
+        // Always read the list of available decks from the main branch
         const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${CARDS_FOLDER}`;
         const response = await fetch(url);
         const files = await response.json();
 
         dropdown.innerHTML = '<option value="">-- Select a deck --</option>';
-        
-        // Add each .json file to the dropdown
         files.forEach(file => {
             if (file.name.endsWith('.json')) {
                 const option = document.createElement('option');
-                option.value = file.path; // e.g. "cards/deck.json"
-                // Format the name slightly to look better (remove .json)
+                option.value = file.path; 
                 option.innerText = file.name.replace('.json', '');
                 dropdown.appendChild(option);
             }
         });
     } catch (error) {
         dropdown.innerHTML = '<option value="">Failed to load decks.</option>';
-        console.error("Error fetching repository contents:", error);
+        console.error(error);
     }
 }
 
-// --- Loading Data (Public Repo vs Local Upload) ---
+// --- Loading Data ---
 async function loadSelectedPublicDeck() {
     const path = document.getElementById('public-decks-dropdown').value;
     if (!path) return alert("Please select a deck.");
-
+    
     AppState.deckId = path;
 
-    try {
-        // Fetch the raw JSON content directly from GitHub Pages
-        const response = await fetch(`/${GITHUB_REPO}/${path}`);
-        
-        // Fallback for local testing if running from file://
-        if (!response.ok) throw new Error("Could not fetch via Pages URL");
-        
-        const rawData = await response.json();
-        setupDeck(rawData, path);
-    } catch (error) {
-        // Fallback using GitHub API if Pages routing fails during testing
+    if (AppState.syncMode === 'github') {
+        // Cloud Mode: Try to fetch progress from the 'data' branch first
         try {
-            const apiRes = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`);
-            const apiData = await apiRes.json();
-            // Decode Base64 content
-            const decodedStr = decodeURIComponent(escape(atob(apiData.content)));
-            setupDeck(JSON.parse(decodedStr), path);
-        } catch(fallbackErr) {
-            alert("Failed to load deck.");
+            const dataBranchUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}?ref=${DATA_BRANCH}`;
+            const res = await fetch(dataBranchUrl, { headers: { 'Authorization': `token ${AppState.token}` } });
+            
+            if (res.ok) {
+                const apiData = await res.json();
+                const decodedStr = decodeURIComponent(escape(atob(apiData.content)));
+                return setupDeck(JSON.parse(decodedStr), path);
+            }
+            // If res is not ok (e.g. 404), it means we haven't saved progress yet. Fall through to fetch main branch.
+        } catch(e) {
+            console.log("No progress found in data branch. Loading original file.");
         }
+    }
+
+    // Local Mode OR Cloud Mode fallback (fetching clean deck from main branch)
+    try {
+        const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`;
+        const apiRes = await fetch(url); // No token needed for public main branch
+        const apiData = await apiRes.json();
+        const decodedStr = decodeURIComponent(escape(atob(apiData.content)));
+        setupDeck(JSON.parse(decodedStr), path);
+    } catch (error) {
+        alert("Failed to load deck.");
+        console.error(error);
     }
 }
 
@@ -92,26 +105,22 @@ function loadUploadedFile(event) {
     if (!file) return;
 
     AppState.deckId = file.name;
-    // Force local mode for uploaded files, even if admin is logged in
-    const previousMode = AppState.syncMode; 
-    AppState.syncMode = 'local'; 
+    AppState.syncMode = 'local'; // Force local mode for uploads
+    updateSyncBadge("Local Save Mode", "#eee", "black");
 
     const reader = new FileReader();
     reader.onload = function(e) {
-        const rawData = JSON.parse(e.target.result);
-        setupDeck(rawData, file.name);
+        setupDeck(JSON.parse(e.target.result), file.name);
     };
     reader.readAsText(file);
 }
 
 function setupDeck(fileContent, storageKey) {
-    // 1. Separate metadata from cards
     AppState.meta = fileContent.meta || { title: "Untitled Deck" };
     document.getElementById('deck-title-display').innerText = AppState.meta.title;
 
     let rawCards = fileContent.cards || [];
 
-    // 2. Merge with any local progress if we are NOT in Cloud Sync mode
     if (AppState.syncMode === 'local') {
         const savedData = JSON.parse(localStorage.getItem(`progress_${storageKey}`)) || {};
         AppState.deck = rawCards.map(card => {
@@ -125,7 +134,7 @@ function setupDeck(fileContent, storageKey) {
             };
         });
     } else {
-        // If Cloud Sync is active, the file from GitHub already contains the latest progress
+        // If Cloud Sync is active, the file either came from 'data' (with progress) or 'main' (clean).
         AppState.deck = rawCards.map(card => ({
             question: card.question,
             answer: card.answer,
@@ -135,29 +144,25 @@ function setupDeck(fileContent, storageKey) {
         }));
     }
 
-    // Set Max Range boundary based on deck size
     document.getElementById('range-max').value = AppState.deck.length - 1;
-
-    // Transition UI
     document.getElementById('setup-section').classList.add('hidden');
     document.getElementById('study-section').classList.remove('hidden');
+
+    // Start the background save timer
+    startAutoSave();
 }
 
 // --- Admin Login Logic ---
 function toggleAdminLogin() {
-    const section = document.getElementById('admin-login-section');
-    section.classList.toggle('hidden');
+    document.getElementById('admin-login-section').classList.toggle('hidden');
 }
 
 function saveAdminToken() {
     const token = document.getElementById('admin-token').value;
     if (!token) return;
-    
     localStorage.setItem('anki_github_token', token);
-    AppState.token = token;
-    AppState.syncMode = 'github';
-    alert("Admin login saved! Files will now sync to GitHub.");
-    location.reload(); // Reload to update badges and state safely
+    alert("Admin login saved!");
+    location.reload(); 
 }
 
 // --- Core Study Logic ---
@@ -171,7 +176,6 @@ function pickNextCard() {
 
     if (availableCards.length === 0) return alert("No cards in that range!");
 
-    // Weighted randomization logic
     let totalWeight = 0;
     const weightedCards = availableCards.map(item => {
         let weight = getWeight(item.card.value);
@@ -219,68 +223,112 @@ function showAnswer() {
     document.getElementById('answer-section').classList.remove('hidden');
 }
 
-// --- Evaluation & Saving ---
-async function evaluateCard(mark) {
+// --- Evaluation & Batch Saving ---
+function evaluateCard(mark) {
     let card = AppState.deck[AppState.currentIndex];
     
-    // Update stats
     card.value = mark;
     card.repeats += 1;
     card.history.push(mark);
 
-    // Hide answer UI to indicate processing
+    AppState.unsavedChanges += 1;
     document.getElementById('answer-section').classList.add('hidden');
     
-    await saveProgress();
+    // Trigger save if threshold reached
+    if (AppState.unsavedChanges >= SAVE_THRESHOLD) {
+        saveProgress(); 
+    }
+    
     pickNextCard();
 }
 
 async function saveProgress() {
+    if (AppState.unsavedChanges === 0) return;
+
+    const changesToSave = AppState.unsavedChanges;
+    
     if (AppState.syncMode === 'local') {
         const progressMap = {};
         AppState.deck.forEach(card => {
             if (card.repeats > 0) {
-                progressMap[card.question] = { 
-                    value: card.value, 
-                    repeats: card.repeats, 
-                    history: card.history 
-                };
+                progressMap[card.question] = { value: card.value, repeats: card.repeats, history: card.history };
             }
         });
         localStorage.setItem(`progress_${AppState.deckId}`, JSON.stringify(progressMap));
+        AppState.unsavedChanges = 0;
     } 
     else if (AppState.syncMode === 'github') {
         try {
+            updateSyncBadge("Syncing...", "#ff9800", "white");
+            
             const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${AppState.deckId}`;
             
-            // Get current file SHA
-            const getRes = await fetch(url, { headers: { 'Authorization': `token ${AppState.token}` } });
-            const currentData = await getRes.json();
-            
-            // Prepare payload
+            // Try to get the SHA of the file specifically on the DATA_BRANCH
+            let fileSha = undefined;
+            try {
+                const getRes = await fetch(`${url}?ref=${DATA_BRANCH}`, { headers: { 'Authorization': `token ${AppState.token}` } });
+                if (getRes.ok) {
+                    const currentData = await getRes.json();
+                    fileSha = currentData.sha;
+                }
+            } catch (e) {
+                // File doesn't exist on data branch yet, SHA remains undefined (GitHub will create it)
+            }
+
             const newPayload = { meta: AppState.meta, cards: AppState.deck };
-            
-            // Base64 encode handling unicode characters
             const jsonString = JSON.stringify(newPayload, null, 2);
             const bytes = new TextEncoder().encode(jsonString);
             const base64Content = btoa(String.fromCharCode(...bytes));
 
-            // Overwrite file
+            const bodyPayload = {
+                message: `Cards Auto-Sync: Updated ${changesToSave} cards`,
+                content: base64Content,
+                branch: DATA_BRANCH // IMPORTANT: Tells GitHub to save it to the data branch
+            };
+            
+            // Only attach SHA if the file already exists on the data branch
+            if (fileSha) {
+                bodyPayload.sha = fileSha;
+            }
+
             await fetch(url, {
                 method: 'PUT',
                 headers: {
                     'Authorization': `token ${AppState.token}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    message: "Cards Sync: Updated card progress",
-                    content: base64Content,
-                    sha: currentData.sha
-                })
+                body: JSON.stringify(bodyPayload)
             });
+            
+            AppState.unsavedChanges = 0;
+            updateSyncBadge("Cloud Sync Active", "#4caf50", "white");
         } catch (error) {
             console.error("Cloud Sync Failed", error);
-            alert("Failed to sync to GitHub. Check your connection or token.");
+            updateSyncBadge("Sync Failed!", "#f44336", "white");
         }
     }
 }
+
+// --- Auto-Save Timers ---
+function startAutoSave() {
+    setInterval(() => {
+        if (AppState.unsavedChanges > 0) {
+            console.log("Timer triggered background save...");
+            saveProgress();
+        }
+    }, SAVE_INTERVAL_MS);
+}
+
+// Warn if trying to close tab with unsaved changes
+window.addEventListener('beforeunload', function (e) {
+    if (AppState.unsavedChanges > 0) {
+        if (AppState.syncMode === 'github') {
+            const previousMode = AppState.syncMode;
+            AppState.syncMode = 'local';
+            saveProgress(); // Force emergency local save
+            AppState.syncMode = previousMode;
+        }
+        e.preventDefault();
+        e.returnValue = "You have unsaved cards. Are you sure you want to leave?";
+    }
+});
