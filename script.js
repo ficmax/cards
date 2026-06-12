@@ -283,11 +283,16 @@ async function saveProgress() {
             
             // Base64 Encoding using standard web APIs (handling Unicode characters correctly)
             const bytes = new TextEncoder().encode(jsonString);
-            const base64Content = btoa(String.fromCharCode.apply(null, Array.from(bytes)));
+            let binaryString = "";
+            // Loop through safely, avoiding the call stack limit
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binaryString += String.fromCharCode(bytes[i]);
+            }
+            const base64Content = btoa(binaryString);
 
             // Construct the payload for GitHub
             const bodyPayload = {
-                message: `Anki Auto-Sync: Updated ${changesToSave} cards`,
+                message: `Cards Auto-Sync: Updated ${changesToSave} cards`,
                 content: base64Content,
                 branch: DATA_BRANCH // Explicitly tell GitHub to push to the data branch
             };
