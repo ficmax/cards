@@ -6,11 +6,19 @@
   "cards": [
     {
       "question": "What is the difference between a Process and a Thread?",
-      "answer": "A process is an executing instance of an application with its own memory space. A thread is a path of execution within a process that shares memory with other threads."
+      "answer": "A process is an executing instance of an application with its own memory space. A thread is a path of execution within a process that shares memory with other threads.",
+      "value": 3,
+      "repeats": 1,
+      "history": [
+        3
+      ]
     },
     {
       "question": "What is a Deadlock in database transactions?",
-      "answer": "A situation where two or more transactions are waiting for each other to release locks, resulting in neither transaction being able to proceed."
+      "answer": "A situation where two or more transactions are waiting for each other to release locks, resulting in neither transaction being able to proceed.",
+      "value": 0,
+      "repeats": 0,
+      "history": []
     }
   ]
 }
