@@ -16,9 +16,11 @@
     {
       "question": "What is a Deadlock in database transactions?",
       "answer": "A situation where two or more transactions are waiting for each other to release locks, resulting in neither transaction being able to proceed.",
-      "value": 0,
-      "repeats": 0,
-      "history": []
+      "value": 4,
+      "repeats": 1,
+      "history": [
+        4
+      ]
     }
   ]
 }
